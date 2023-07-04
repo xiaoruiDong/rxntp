@@ -163,7 +163,9 @@ class ReactionTemplate(object):
             reaction (Reaction): An RDMC reaction object.
         """
         graph = cls.make_graph_from_reaction(reaction)
-        return cls(graph)
+        return cls(graph,
+                   num_reactants=reaction.num_reactants,
+                   num_products=reaction.num_products)
 
     @classmethod
     def from_reaction_smiles(cls, rxn_smiles: str):
