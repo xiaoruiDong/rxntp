@@ -4,7 +4,12 @@
 """
 This module provides the base class of reaction template.
 """
+
+from copy import deepcopy
+from typing import Callable, Optional, Union
 import networkx as nx
+from rdmc import RDKitMol
+from rdmc.reaction import Reaction
 
 class ReactionTemplate(object):
 
@@ -80,4 +85,50 @@ class ReactionTemplate(object):
                                 num_products=self.num_products,
                                 name=self.name,
                                 reversible=self.reversible)
+
+    @classmethod
+    def from_reaction(cls,
+                      reaction: Reaction,
+                      ) -> 'ReactionTemplate' :
+        """
+        Generate a reaction template from a reaction.
+
+        Args:
+            reaction (Reaction): An RDMC reaction object.
+        """
+        graph = cls.make_graph_from_reaction(reaction)
+        return cls(graph)
+
+    @classmethod
+    def from_reaction_smiles(cls, rxn_smiles: str):
+        """
+        Generate a reaction template from a reaction SMILES.
+
+        Args:
+            rxn_smiles (str): the SMILES for the reaction.
+        """
+        rxn = Reaction.from_reaction_smiles(rxn_smiles)
+        return cls.from_reaction(rxn)
+
+    @classmethod
+    def from_reactant_and_product_smiles(cls, rsmi: str, psmi: str):
+        """
+        Generate a reaction template from reactant and product SMILES.
+
+        Args:
+            rsmi (str): the SMILES for the reactant.
+            psmi (str): the SMILES for the product.
+        """
+        rxn = Reaction.from_reactant_and_product_smiles(rsmi=rsmi, psmi=psmi)
+        return cls.from_reaction(rxn)
+
+    @staticmethod
+    def make_graph_from_reaction(reaction: Reaction,
+                                 correct_resonance: bool = True,
+                                 correct_reaction_direction: bool = True,
+                                ):
+        """
+        Make a graph for the reaction template.
+        """
+
 
