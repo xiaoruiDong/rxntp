@@ -7,9 +7,15 @@ This module provides the base class of reaction template.
 
 from copy import deepcopy
 from typing import Callable, Optional, Union
+
+import matplotlib.pyplot as plt
 import networkx as nx
+
+from rdkit.Chem import GetShortestPath
 from rdmc import RDKitMol
 from rdmc.reaction import Reaction
+from rdmc.utils import PERIODIC_TABLE, CPK_COLOR_PALETTE
+
 
 class ReactionTemplate(object):
 
@@ -85,6 +91,66 @@ class ReactionTemplate(object):
                                 num_products=self.num_products,
                                 name=self.name,
                                 reversible=self.reversible)
+
+    def draw(self,
+             ax: Optional['Axes'] = None,
+             layout_func: Callable = nx.spring_layout):
+        """
+        Draw the reaction template.
+        """
+        if ax is None:
+            _, ax = plt.subplots(1, 1)
+
+        pos = layout_func(self.graph)
+
+        # Plot nodes/atoms
+
+        node_color = [CPK_COLOR_PALETTE[PERIODIC_TABLE.GetElementSymbol(atomic_num)]
+                      for atomic_num in nx.get_node_attributes(self.graph, 'atomic_num').values()]
+        nx.draw_networkx_nodes(self.graph,
+                               pos,
+                               node_color=node_color,
+                               edgecolors='k',
+                               node_size=1000,
+                               ax=ax)
+
+        # Plot edges/bonds
+        style_book = \
+            {'FORM_BOND': ('red', '--', 3),
+             'BREAK_BOND': ('green', ':', 3),
+             'CHANGE_BOND': ('black', 'solid', 3),
+             'ORIG_BOND': ('grey', 'solid', 1),
+             }
+        edge_color, edge_style, edge_width = zip(*[style_book[bond_change_type]
+                                                   for bond_change_type in nx.get_edge_attributes(self.graph,
+                                                                                                  'bond_change_type').values()])
+        nx.draw_networkx_edges(self.graph,
+                               pos,
+                               edge_color=edge_color,
+                               style=edge_style,
+                               width=edge_width,
+                               ax=ax)
+
+        # Plot label information
+        node_labels = {atom_idx: self.get_node_status(atom_idx, attr_dict)
+                       for atom_idx, attr_dict in self.graph.nodes(data=True)}
+        nx.draw_networkx_labels(self.graph,
+                                pos,
+                                labels=node_labels,
+                                font_size=7,
+                                ax=ax,
+                                )
+        # Plot edge label information
+        edge_labels = {(u,v): self.get_edge_status(attr_dict, include_reactant_bond_order=False)
+                       for u, v, attr_dict in self.graph.edges(data=True)}
+        nx.draw_networkx_edge_labels(self.graph,
+                                     pos,
+                                     edge_labels=edge_labels,
+                                     label_pos=0.5,
+                                     font_size=7,
+                                     ax=ax,
+                                     rotate=False,)
+        plt.show()
 
     @classmethod
     def from_reaction(cls,
@@ -321,3 +387,64 @@ class ReactionTemplate(object):
 
 
 
+
+    @staticmethod
+    def get_node_status(atom_idx: int,
+                        attr_dict: dict):
+        """
+        Generate the node status description for visualization and export.
+
+        Args:
+            atom_idx (int): The atom index
+            attr_dict (dict): The attribute dictionary of the node.
+
+        Returns:
+            str: the status of the atom
+        """
+        atom_symbol = PERIODIC_TABLE.GetElementSymbol(attr_dict['atomic_num'])
+        status = f'{atom_symbol}:{atom_idx+1}\n'
+
+        if attr_dict['radical_change'] > 0:
+            status += 'GAIN RADICAL\n'
+        elif attr_dict['radical_change'] < 0:
+            status += 'LOSE RADICAL\n'
+        if attr_dict['charge_change'] > 0:
+            status += 'GAIN CHARGE\n'
+        elif attr_dict['charge_change'] < 0:
+            status += 'LOSE CHARGE\n'
+        if attr_dict['lone_pair_change'] > 0:
+            status += 'GAIN PAIR\n'
+        elif attr_dict['lone_pair_change'] < 0:
+            status += 'LOSE PAIR\n'
+        if status.endswith('\n'):
+            status = status[:-1]
+
+        return status
+
+    @staticmethod
+    def get_edge_status(attr_dict: dict,
+                        include_reactant_bond_order: bool = False):
+        """
+        Generate the edge status description for visualization and export.
+
+        Args:
+            attr_dict (dict): The attribute dictionary of the edge.
+            include_reactant_bond_order (bool): How important is th reactant bond order is still under investigation.
+                                                Here, we make it available so that it can be easily turned on/off.
+
+        Returns:
+            str: the status of the edge
+        """
+        bond_change_type = attr_dict['bond_change_type']
+        if bond_change_type in ["FORM_BOND", "BREAK_BOND"]:
+            # Example: "FORM_BOND: HOMO"; "BREAK_BOND: HETERO"
+            status = f"{bond_change_type}: {'HOMO' if attr_dict['homo'] else 'HETERO'}"
+        elif bond_change_type == 'CHANGE_BOND':
+            status = f"{bond_change_type}: {attr_dict['bond_order_change']:+.1f}"
+        else:  # ORIG_BOND
+            status = f"{bond_change_type}: {attr_dict['reactant_bond_order']:.1f}"
+
+        if include_reactant_bond_order:
+            status += f"REACTANT BO: {attr_dict['reactant_bond_order']:.1f}"
+
+        return status
