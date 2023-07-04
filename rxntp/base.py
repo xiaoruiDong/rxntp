@@ -450,3 +450,38 @@ class ReactionTemplate(object):
             status += f"REACTANT BO: {attr_dict['reactant_bond_order']:.1f}"
 
         return status
+
+    def get_reverse(self,
+                    name: Optional[str] = None,
+                    ) -> "ReactionTemplate":
+        """
+        Generate the reverse reaction's template
+        """
+        reverse_template = self.copy()
+        r_graph = reverse_template.graph
+
+        for node in r_graph.nodes:
+            node_attr = r_graph.nodes[node]
+            node_attr['radical_change'] = - node_attr['radical_change']
+            node_attr['charge_change'] = - node_attr['charge_change']
+            node_attr['lone_pair_change'] = - node_attr['lone_pair_change']
+
+        for edge in r_graph.edges:
+            edge_attr = r_graph.edges[edge]
+            if edge_attr['bond_change_type'] == 'FORM_BOND':
+                edge_attr['bond_change_type'] = 'BREAK_BOND'
+            elif edge_attr['bond_change_type'] == 'BREAK_BOND':
+                edge_attr['bond_change_type'] = 'FORM_BOND'
+            if edge_attr.get('reactant_bond_order', None) is not None:
+                edge_attr['reactant_bond_order'] = edge_attr['reactant_bond_order'] + edge_attr['bond_order_change']
+            edge_attr['bond_order_change'] = - edge_attr['bond_order_change']
+
+        if name is not None:
+            reverse_template.name = name
+        elif self.name.endswith('_rev'):
+            reverse_template.name = self.name[:-4]
+        else:
+            reverse_template.name = self.name + '_rev'
+        reverse_template.num_reactants, reverse_template.num_products = reverse_template.num_products, reverse_template.num_reactants
+
+        return reverse_template
