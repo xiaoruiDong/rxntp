@@ -71,3 +71,13 @@ class ReactionTemplate(object):
     def num_changed_bonds(self):
         return len(self.changed_bonds)
 
+    def copy(self):
+        """
+        Make a copy of the reaction template.
+        """
+        return ReactionTemplate(deepcopy(self.graph),
+                                num_reactants=self.num_reactants,
+                                num_products=self.num_products,
+                                name=self.name,
+                                reversible=self.reversible)
+
