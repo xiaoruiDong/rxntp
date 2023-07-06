@@ -6,6 +6,7 @@ This module provides the base class of reaction template.
 """
 
 from copy import deepcopy
+from itertools import product
 from typing import Callable, Optional, Union
 
 import matplotlib.pyplot as plt
@@ -134,6 +135,7 @@ class ReactionTemplate(object):
              'BREAK_BOND': ('green', 'dotted', 3),
              'CHANGE_BOND': ('black', 'solid', 3),
              'ORIG_BOND': ('grey', 'solid', 1),
+             'IMPLICIT': ('grey', 'solid', 1),
              }
         edge_color, edge_style, edge_width = zip(*[style_book[bond_change_type]
                                                    for bond_change_type in nx.get_edge_attributes(graph,
@@ -170,6 +172,9 @@ class ReactionTemplate(object):
     @classmethod
     def from_reaction(cls,
                       reaction: Reaction,
+                      correct_resonance: bool = True,
+                      correct_reaction_direction: bool = True,
+                      implicit_connect: bool = True,
                       ) -> 'ReactionTemplate' :
         """
         Generate a reaction template from a reaction.
@@ -177,13 +182,20 @@ class ReactionTemplate(object):
         Args:
             reaction (Reaction): An RDMC reaction object.
         """
-        graph = cls.make_graph_from_reaction(reaction)
+        graph = cls.make_graph_from_reaction(reaction,
+                                             correct_resonance=correct_resonance,
+                                             correct_reaction_direction=correct_reaction_direction,
+                                             implicit_connect=implicit_connect)
         return cls(graph,
                    num_reactants=reaction.num_reactants,
                    num_products=reaction.num_products)
 
     @classmethod
-    def from_reaction_smiles(cls, rxn_smiles: str):
+    def from_reaction_smiles(cls,
+                             rxn_smiles: str,
+                             correct_resonance: bool = True,
+                             correct_reaction_direction: bool = True,
+                             implicit_connect: bool = True,):
         """
         Generate a reaction template from a reaction SMILES.
 
@@ -191,10 +203,18 @@ class ReactionTemplate(object):
             rxn_smiles (str): the SMILES for the reaction.
         """
         rxn = Reaction.from_reaction_smiles(rxn_smiles)
-        return cls.from_reaction(rxn)
+        return cls.from_reaction(rxn,
+                                 correct_resonance=correct_resonance,
+                                 correct_reaction_direction=correct_reaction_direction,
+                                 implicit_connect=implicit_connect,)
 
     @classmethod
-    def from_reactant_and_product_smiles(cls, rsmi: str, psmi: str):
+    def from_reactant_and_product_smiles(cls,
+                                         rsmi: str,
+                                         psmi: str,
+                                         correct_resonance: bool = True,
+                                         correct_reaction_direction: bool = True,
+                                         implicit_connect: bool = True,):
         """
         Generate a reaction template from reactant and product SMILES.
 
@@ -202,8 +222,12 @@ class ReactionTemplate(object):
             rsmi (str): the SMILES for the reactant.
             psmi (str): the SMILES for the product.
         """
-        rxn = Reaction.from_reactant_and_product_smiles(rsmi=rsmi, psmi=psmi)
-        return cls.from_reaction(rxn)
+        rxn = Reaction.from_reactant_and_product_smiles(rsmi=rsmi,
+                                                        psmi=psmi)
+        return cls.from_reaction(rxn,
+                                 correct_resonance=correct_resonance,
+                                 correct_reaction_direction=correct_reaction_direction,
+                                 implicit_connect=implicit_connect,)
 
     @staticmethod
     def correct_reaction_direction(reaction):
@@ -235,6 +259,7 @@ class ReactionTemplate(object):
     def make_graph_from_reaction(reaction: Reaction,
                                  correct_resonance: bool = True,
                                  correct_reaction_direction: bool = True,
+                                 implicit_connect: bool = True,
                                 ):
         """
         Make a graph for the reaction template.
@@ -273,7 +298,84 @@ class ReactionTemplate(object):
                     attr_dict = ReactionTemplate._get_edge_attr_from_bond(rmol, pmol, (atom1, atom2))
                     graph.add_edge(**attr_dict)
 
+        # Expand the graph based on implicit connectivity
+        if implicit_connect:
+            cutted_graph, edges_to_cut = ReactionTemplate._cut_graph_by_hetero_break_bond(graph)
+            implicit_connect = ReactionTemplate._find_implicit_connection(mol=rmol,
+                                                                          cutted_graph=cutted_graph,
+                                                                          edges_to_cut=edges_to_cut,
+                                                                          num_frags=reaction.num_products)
+            for edge in implicit_connect:
+                graph.add_edge(*edge,
+                            bond_change_type='IMPLICIT',
+                            bond_order_change=0,
+                            homo=True,
+                            reactant_bond_order=1.0)  # TODO: make it a wildcard
+
         return graph
+
+    @staticmethod
+    def _cut_graph_by_hetero_break_bond(graph):
+        """
+        Cut the graph at edges that are classified as heterogenenous breaking bonds.
+        """
+        cutted_graph = graph.copy()
+        edges_to_cut = [[u, v] for u, v, d in cutted_graph.edges(data=True)
+                        if d['bond_change_type'] == 'BREAK_BOND' and not d['homo']]
+        cutted_graph.remove_edges_from(edges_to_cut)  # doesn't allow set(u,v) as entries
+        edges_to_cut = [set(edge) for edge in edges_to_cut]
+        return cutted_graph, edges_to_cut
+
+    @staticmethod
+    def _find_implicit_connection(mol: 'RDKitMol',
+                                  cutted_graph: 'graph',
+                                  edges_to_cut: list,
+                                  num_frags: Optional[int] = None):
+        """
+        Find implicit connections (not directly chemically bonded) in a reaction graph.
+        """
+        groups = list(nx.connected_components(cutted_graph))
+        num_groups = len(groups)
+        implicit_connect = []
+
+        if num_frags is None:
+            num_frags = len(mol.GetMolFrags())
+        if num_groups == num_frags:
+            return implicit_connect
+
+        isolated_groups = []
+        H_atoms = {u for u, v in cutted_graph.nodes(data='atomic_num') if v == 1}  # No need to check H atoms
+        for i in range(num_groups):
+            for j in range(i + 1, num_groups):
+                union_group = groups[i] | groups[j]
+                for edge in edges_to_cut:
+                    # If the edges cutted are subset of the combined groups
+                    # then the two groups are connected originally
+                    if edge.issubset(union_group):
+                        break
+                else:
+                    isolated_groups.append((groups[i].difference(H_atoms),
+                                            groups[j].difference(H_atoms)))
+
+        for groupa, groupb in isolated_groups:
+            possible_connect = product(groupa, groupb)
+            shortest_path = {}
+            for edge in possible_connect:
+                path = GetShortestPath(mol._mol, *edge)
+                if path:
+                    # make sure the cutted edges are not in the path
+                    for cutted_edge in edges_to_cut:
+                        if cutted_edge.issubset(path):
+                            break
+                    else:
+                        shortest_path[edge] = len(path)
+            if shortest_path:
+                min_path_length = min(shortest_path.values())
+                # There are cases two paths with same length are found.
+                implicit_connect.extend([edge for edge, length in shortest_path.items()
+                                         if length == min_path_length])
+
+        return implicit_connect
 
     @staticmethod
     def _get_node_attr_from_atom(ratom: 'Atom',
