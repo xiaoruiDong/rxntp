@@ -252,7 +252,7 @@ class ReactionTemplate(object):
         graph = nx.Graph()
 
         # Add nodes
-        for atom_idx in involved_atoms:
+        for atom_idx in sorted(involved_atoms):
             ratom, patom = rmol.GetAtomWithIdx(atom_idx), pmol.GetAtomWithIdx(atom_idx)
             attr_dict = ReactionTemplate._get_node_attr_from_atom(ratom, patom)
             graph.add_node(**attr_dict)
