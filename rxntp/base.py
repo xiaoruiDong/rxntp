@@ -34,6 +34,10 @@ class ReactionTemplate(object):
         self.num_reactants = num_reactants
         self.num_products = num_products
 
+    def __neg__(self):
+        # Perform negation of the graph
+        return self.get_reverse()
+
     @property
     def num_atoms(self):
         return self.graph.number_of_nodes()
