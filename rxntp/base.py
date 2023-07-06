@@ -227,7 +227,8 @@ class ReactionTemplate(object):
         elif reaction.num_reactants > reaction.num_products:
             reverse_flag = True
         if reverse_flag:
-            return reaction.apply_reaction_direction_correction()
+            return Reaction(reactant=reaction.product,
+                            product=reaction.reactant,)
         return reaction
 
     @staticmethod
