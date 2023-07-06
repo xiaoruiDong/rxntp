@@ -501,3 +501,18 @@ class ReactionTemplate(object):
         reverse_template.num_reactants, reverse_template.num_products = reverse_template.num_products, reverse_template.num_reactants
 
         return reverse_template
+
+    def renumber(self,
+                 mapping: Optional[dict] = None,
+                 copy: bool = True,):
+        """
+        Renumber the nodes in the graph by a mapping.
+        """
+        if copy:
+            new_template = self.copy()
+        else:
+            new_template = self
+        if mapping is None:
+            mapping = {node: i for i, node in enumerate(self.graph.nodes)}
+        new_template.graph = nx.relabel_nodes(self.graph, mapping, copy=True)
+        return new_template
