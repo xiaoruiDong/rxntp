@@ -98,20 +98,30 @@ class ReactionTemplate(object):
 
     def draw(self,
              ax: Optional['Axes'] = None,
-             layout_func: Callable = nx.spring_layout):
+             layout_func: Callable = nx.spring_layout,
+             ):
         """
         Draw the reaction template.
+        """
+        self._draw(self.graph, ax=ax, layout_func=layout_func)
+
+    @staticmethod
+    def _draw(graph,
+              ax: Optional['Axes'] = None,
+              layout_func: Callable = nx.spring_layout):
+        """
+        A helper function to draw the reaction template according to the provided graph.
         """
         if ax is None:
             _, ax = plt.subplots(1, 1)
 
-        pos = layout_func(self.graph)
+        pos = layout_func(graph)
 
         # Plot nodes/atoms
 
         node_color = [CPK_COLOR_PALETTE[PERIODIC_TABLE.GetElementSymbol(atomic_num)]
-                      for atomic_num in nx.get_node_attributes(self.graph, 'atomic_num').values()]
-        nx.draw_networkx_nodes(self.graph,
+                      for atomic_num in nx.get_node_attributes(graph, 'atomic_num').values()]
+        nx.draw_networkx_nodes(graph,
                                pos,
                                node_color=node_color,
                                edgecolors='k',
@@ -120,15 +130,16 @@ class ReactionTemplate(object):
 
         # Plot edges/bonds
         style_book = \
-            {'FORM_BOND': ('red', '--', 3),
-             'BREAK_BOND': ('green', ':', 3),
+            {'FORM_BOND': ('red', 'dashed', 3),
+             'BREAK_BOND': ('green', 'dotted', 3),
              'CHANGE_BOND': ('black', 'solid', 3),
              'ORIG_BOND': ('grey', 'solid', 1),
              }
         edge_color, edge_style, edge_width = zip(*[style_book[bond_change_type]
-                                                   for bond_change_type in nx.get_edge_attributes(self.graph,
+                                                   for bond_change_type in nx.get_edge_attributes(graph,
                                                                                                   'bond_change_type').values()])
-        nx.draw_networkx_edges(self.graph,
+        edge_style = list(edge_style)  # Somehow in matplotlib, if edge_style is a tuple, it will run into bugs
+        nx.draw_networkx_edges(graph,
                                pos,
                                edge_color=edge_color,
                                style=edge_style,
@@ -136,18 +147,18 @@ class ReactionTemplate(object):
                                ax=ax)
 
         # Plot label information
-        node_labels = {atom_idx: self.get_node_status(atom_idx, attr_dict)
-                       for atom_idx, attr_dict in self.graph.nodes(data=True)}
-        nx.draw_networkx_labels(self.graph,
+        node_labels = {atom_idx: ReactionTemplate.get_node_status(atom_idx, attr_dict)
+                       for atom_idx, attr_dict in graph.nodes(data=True)}
+        nx.draw_networkx_labels(graph,
                                 pos,
                                 labels=node_labels,
                                 font_size=7,
                                 ax=ax,
                                 )
         # Plot edge label information
-        edge_labels = {(u,v): self.get_edge_status(attr_dict, include_reactant_bond_order=False)
-                       for u, v, attr_dict in self.graph.edges(data=True)}
-        nx.draw_networkx_edge_labels(self.graph,
+        edge_labels = {(u,v): ReactionTemplate.get_edge_status(attr_dict, include_reactant_bond_order=False)
+                       for u, v, attr_dict in graph.edges(data=True)}
+        nx.draw_networkx_edge_labels(graph,
                                      pos,
                                      edge_labels=edge_labels,
                                      label_pos=0.5,
